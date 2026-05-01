@@ -60,7 +60,8 @@ export default function BubbleShooter() {
   const [shot, setShot] = useState<Shot | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [nextColor, setNextColor] = useState(COLORS[Math.floor(Math.random() * COLORS.length)]);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [cannonX, setCannonX] = useState(280); // Default center
+  const [mousePos, setMousePos] = useState({ x: 280, y: 0 });
 
   // Initialize bubbles
   const initGame = useCallback(() => {
@@ -85,16 +86,17 @@ export default function BubbleShooter() {
     setParticles([]);
     setGameState('playing');
     setShot(null);
+    setCannonX(280);
     setNextColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
   }, []);
 
-  const handleShoot = () => {
+  const handleShoot = useCallback(() => {
     if (gameState !== 'playing' || shot) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const startX = canvas.width / 2;
-    const startY = canvas.height - 50;
+    const startX = cannonX;
+    const startY = canvas.height - 60;
     const dx = mousePos.x - startX;
     const dy = mousePos.y - startY;
     const angle = Math.atan2(dy, dx);
@@ -108,7 +110,7 @@ export default function BubbleShooter() {
       color: nextColor,
     });
     setNextColor(COLORS[Math.floor(Math.random() * COLORS.length)]);
-  };
+  }, [gameState, shot, cannonX, mousePos, nextColor]);
 
   // Find cluster of same color
   const findCluster = (root: Bubble, all: Bubble[]): string[] => {
@@ -324,7 +326,7 @@ export default function BubbleShooter() {
       });
 
       // --- Enhanced Shooting Area ---
-      const startX = canvas.width / 2;
+      const startX = cannonX;
       const startY = canvas.height - 60;
       const angle = Math.atan2(mousePos.y - startY, mousePos.x - startX);
       
@@ -393,15 +395,30 @@ export default function BubbleShooter() {
     };
     frameId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(frameId);
-  }, [gameState, bubbles, shot, particles, nextColor, mousePos, resolveCollision]);
+  }, [gameState, bubbles, shot, particles, nextColor, mousePos, cannonX, resolveCollision]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleInput = useCallback((clientX: number, clientY: number, isMove: boolean) => {
     const rect = canvasRef.current?.getBoundingClientRect();
-    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
+    if (!rect) return;
+    
+    // Scale coordinates if the canvas is visually scaled
+    const scaleX = 560 / rect.width;
+    const scaleY = 780 / rect.height;
+    
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+    
+    setMousePos({ x, y });
+    
+    // Move cannon base if it's a movement event
+    if (isMove) {
+      const clampedX = Math.max(BUBBLE_RADIUS * 2, Math.min(x, 560 - BUBBLE_RADIUS * 2));
+      setCannonX(clampedX);
+    }
+  }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#08080a] text-white font-sans selection:bg-red-500/30 overflow-hidden">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#08080a] text-white font-sans selection:bg-red-500/30 overflow-hidden touch-none">
       {/* Header UI */}
       <div className="w-full max-w-2xl px-8 py-6 flex items-center justify-between z-10">
         <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }}>
@@ -436,8 +453,18 @@ export default function BubbleShooter() {
         animate={{ y: 0, opacity: 1 }}
         ref={containerRef} 
         className="relative w-full max-w-2xl aspect-[3/4.2] bg-black rounded-[2.5rem] border-[12px] border-neutral-800 shadow-[0_0_150px_rgba(0,0,0,0.8)] overflow-hidden cursor-crosshair group"
+        onMouseMove={(e) => handleInput(e.clientX, e.clientY, true)}
+        onClick={handleShoot}
+        onTouchMove={(e) => {
+          const touch = e.touches[0];
+          handleInput(touch.clientX, touch.clientY, true);
+        }}
+        onTouchEnd={(e) => {
+          // If we want a separate tap-to-fire mechanic or just firing on release
+          handleShoot();
+        }}
       >
-        <canvas ref={canvasRef} width={560} height={780} className="w-full h-full" onMouseMove={handleMouseMove} onClick={handleShoot} />
+        <canvas ref={canvasRef} width={560} height={780} className="w-full h-full" />
 
         <AnimatePresence>
           {gameState === 'start' && (
